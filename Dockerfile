@@ -5,6 +5,7 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Install system dependencies for audio processing and C compilation
+# We need these for librosa (scipy) and whisper
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     gcc \
@@ -14,18 +15,25 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements and install python dependencies
-# We point to the backend folder specifically
-COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Hugging Face runs as user 1000, so we set that up to be safe
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH
 
-# Pre-download the Whisper model so it's ready in the image
+WORKDIR $HOME/app
+
+# Copy requirements and install python dependencies
+COPY --chown=user backend/requirements.txt $HOME/app/requirements.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Pre-download the Whisper model so it's baked into the image
 RUN python -c "import whisper; whisper.load_model('base.en')"
 
 # Copy the rest of the backend code
-COPY backend/ .
+COPY --chown=user backend/ .
 
-# Hugging Face Spaces MUST run on port 7860
+# Hugging Face MUST run on port 7860
 EXPOSE 7860
 
 # Start the application on 7860
